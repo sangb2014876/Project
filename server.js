@@ -1,4 +1,4 @@
-require("dotenv").config() ;
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors")
 const multer = require("multer")
@@ -58,24 +58,56 @@ cloudinary.config({
 });
 
 cloudinaryUpload = (file) =>
-    cloudinary.uploader.upload(file,{
-        upload_preset: process.env.API_UPLOAD,
+    cloudinary.uploader.upload(file, {
+        upload_preset: process.env.UPLOAD_PRESET,
     });
 
+// get images from folder using cloudinary search API
+getImages = async (next_cursor) => {
+    const resources = await cloudinary.search.expression("folder:samples").max_results(20).sort_by("uploaded_at", "desc").next_cursor(next_cursor).execute();
+    return resources;
+}
+// get Images API
+app.get("/api/photos", async (req, res) => {
+    const response = await getImages(req.query.next_cursor || "");
+    const results = {
+        images: [],
+        next_cursor: null,
+    };
 
-
+    response.resources.forEach((item)=> {
+        results.images.push({
+            public_id: item.public_id,
+            created_at: item.created_at,
+            secure_url: item.secure_url
+        })
+    })
+    if(response.next_cursor){
+        results.next_cursor = response.next_cursor;
+    }
+    return res.json({
+        results,
+    });
+})
 // upload API
 app.post("/api/upload", singleUploadCtrl, async (req, res) => {
+    const uploadFile = req.body.file || req.file;
     try {
-        if (!req.file) {
+        if (!uploadFile) {
             return res.status(422).send({
                 message: "there is error when uploading",
             });
         }
-        // chuyen tu dang stream sang dang base 64
-        const file64 = formatBuffer(req.file);
-        const uploadResult = await cloudinaryUpload(file64.content);
-        return res.status(200).json({
+        let uploadResut;
+        if (!uploadFile.buffer) {
+            uploadResult = await cloudinaryUpload(uploadFile);
+        } else {
+            const file64 = formatBuffer(req.file);
+            uploadResult = await cloudinaryUpload(file64.content);
+        }
+        // convert stream to base64 format
+
+        return res.json({
             cloudinaryId: uploadResult.puclic_id,
             url: uploadResult.secure_url,
             message: "upload thanh cong",
